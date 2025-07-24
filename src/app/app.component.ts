@@ -13,6 +13,7 @@ import { MapGenerationSettingsComponent } from './modals/map-generation/map-gene
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent implements AfterViewInit {
+  public title = 'The Wild Loop - Balance of Beasts';
   // Rysuje tło mapy (biomy lub wysokości)
   private drawMapBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     const mapWidth = this.map[0].length;
