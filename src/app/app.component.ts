@@ -1,6 +1,7 @@
-import { Component, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ViewChild, ElementRef, ChangeDetectorRef } from '@angular/core';
 import { MapService, MapGenerationOptions, TerrainPreset } from './services/map.service';
 import { Tile, Biome } from './models/tile.model';
+import { Animal } from './services/map.service';
 import { FormsModule } from '@angular/forms';
 import { DecimalPipe, CommonModule } from '@angular/common';
 import { MapGenerationModalComponent } from './modals/map-generation/map-generation-modal.component';
@@ -12,8 +13,18 @@ import { MapGenerationSettingsComponent } from './modals/map-generation/map-gene
   imports: [FormsModule, DecimalPipe, CommonModule, MapGenerationModalComponent, MapGenerationSettingsComponent],
   styleUrls: ['./app.component.scss']
 })
-export class AppComponent implements AfterViewInit {
+export class AppComponent implements OnInit, AfterViewInit {
+  ngOnInit(): void {
+    const mapSize = 1000;
+    this.map = this.mapService.generateMap(mapSize, mapSize);
+  }
   public title = 'The Wild Loop - Balance of Beasts';
+  // Zwierzęta
+  public showPeaksAndValleys = true;
+  public foxCount: number = 3;
+  public hareCount: number = 8;
+  public animals: Animal[] = [];
+  private animalIcons: { [key: string]: HTMLImageElement } = {};
   // Rysuje tło mapy (biomy lub wysokości)
   private drawMapBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     const mapWidth = this.map[0].length;
@@ -54,14 +65,14 @@ export class AppComponent implements AfterViewInit {
     }
     ctx.putImageData(imageData, 0, 0);
   }
-  public showContours = true;
+  public showContours = false;
   showMapModal = false;
   showSettings = false;
   mapGenOptions: MapGenerationOptions = { preset: 'niziny', width: 1000, height: 1000 };
   @ViewChild('mapCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('miniMapCanvas') miniMapRef!: ElementRef<HTMLCanvasElement>;
   public map: Tile[][] = [];
-  public colorMode: 'height' | 'biome' = 'height';
+  public colorMode: 'height' | 'biome' = 'biome';
   // Płynny zoom i przesuwanie
   public centerX = 500; // środek mapy
   public centerY = 500;
@@ -70,17 +81,17 @@ export class AppComponent implements AfterViewInit {
   public maxZoom = 32;
   public contourIntervalCm: number = 100; // co ile centymetrów rysować izohipsy (UI)
 
-  constructor(public mapService: MapService) {}
+  constructor(public mapService: MapService, private cdRef: ChangeDetectorRef) {}
 
   ngAfterViewInit(): void {
     const canvas = this.canvasRef.nativeElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const width = canvas.width;
-    const height = canvas.height;
-    const mapSize = 1000;
-    this.map = this.mapService.generateMap(mapSize, mapSize);
-    this.redraw();
+    this.loadAnimalIcons().then(() => {
+      setTimeout(() => {
+        this.redraw();
+      });
+    });
     // Obsługa scrolla
     canvas.addEventListener('wheel', (event) => this.onCanvasWheel(event), { passive: false });
     // Obsługa przesuwania myszą
@@ -94,6 +105,8 @@ export class AppComponent implements AfterViewInit {
     window.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       const rect = canvas.getBoundingClientRect();
+      const width = canvas.width;
+      const height = canvas.height;
       const dx = (e.clientX - rect.left - lastX) / (width / (1000 / this.zoom));
       const dy = (e.clientY - rect.top - lastY) / (height / (1000 / this.zoom));
       this.centerX -= dx;
@@ -263,8 +276,57 @@ export class AppComponent implements AfterViewInit {
     if (this.showContours) {
       this.drawContours(ctx, width, height);
     }
-    this.drawPeaksAndValleys(ctx, width, height);
+    if (this.showPeaksAndValleys) {
+      this.drawPeaksAndValleys(ctx, width, height);
+    }
     this.drawMiniMap();
+    this.drawAnimals(ctx, width, height);
+  }
+  togglePeaksAndValleys() {
+    this.showPeaksAndValleys = !this.showPeaksAndValleys;
+    this.redraw();
+  }
+
+  private async loadAnimalIcons() {
+    const fox = new Image();
+    fox.src = 'assets/animals/fox.png';
+    await new Promise(res => { fox.onload = res; });
+    this.animalIcons['fox'] = fox;
+    const hare = new Image();
+    hare.src = 'assets/animals/hare.png';
+    await new Promise(res => { hare.onload = res; });
+    this.animalIcons['hare'] = hare;
+  }
+
+  public spawnFoxes() {
+    // Dodaj nowe lisy do istniejącej populacji
+    const foxes = this.mapService.getAnimals(this.map, this.foxCount, 0);
+    this.animals = [...this.animals, ...foxes];
+    this.redraw();
+  }
+
+  public spawnHares() {
+    // Dodaj nowe zające do istniejącej populacji
+    const hares = this.mapService.getAnimals(this.map, 0, this.hareCount);
+    this.animals = [...this.animals, ...hares];
+    this.redraw();
+  }
+
+  private drawAnimals(ctx: CanvasRenderingContext2D, width: number, height: number) {
+    if (!this.animals || !this.animalIcons) return;
+    const { minX, minY, maxX, maxY } = this.getZoomWindow();
+    for (const animal of this.animals) {
+      const icon = this.animalIcons[animal.type];
+      if (!icon) continue;
+      // Przeskaluj pozycję zwierzęcia do canvasu
+      const x = ((animal.x - minX) / (maxX - minX)) * width;
+      const y = ((animal.y - minY) / (maxY - minY)) * height;
+      let size = animal.type === 'fox' ? 32 : 24;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(icon, x - size/2, y - size/2, size, size);
+      ctx.restore();
+    }
   }
 
   toggleContours() {

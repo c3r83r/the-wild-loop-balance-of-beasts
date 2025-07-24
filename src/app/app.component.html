@@ -45,11 +45,27 @@
     />
     <span>{{ zoom }}</span>
   </div>
-  <div style="display: flex; align-items: center; margin-left: 164px;">
+  <div style="display: flex; align-items: center; margin-left: 164px; gap: 8px;">
     <label for="contourInterval" style="margin-right: 8px;">Izohipsy co</label>
     <input id="contourInterval" type="number" min="50" [(ngModel)]="contourIntervalCm" (change)="enforceMinContourInterval(); redraw()" (blur)="enforceMinContourInterval(); redraw()" style="width: 60px; margin-right: 4px;" />
     <span>cm</span>
     <button (click)="toggleContours()" style="margin-left: 16px;">{{ showContours ? 'Ukryj izohipsy' : 'Pokaż izohipsy' }}</button>
+    <button (click)="togglePeaksAndValleys()" style="margin-left: 8px;">{{ showPeaksAndValleys ? 'Ukryj szczyty/doliny' : 'Pokaż szczyty/doliny' }}</button>
+  </div>
+</div>
+<!-- Panel zwierząt nad mapą -->
+<div style="margin-bottom: 12px; background: rgba(255,255,255,0.97); border-radius: 8px; padding: 10px 16px; box-shadow: 0 2px 8px #0002; min-width: 220px; max-width: 420px; display: flex; gap: 18px; align-items: center;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <img src="assets/animals/fox.png" alt="Lis" style="width: 28px; height: 28px;">
+    <span style="min-width: 40px;">Lisy:</span>
+    <input type="number" min="0" [(ngModel)]="foxCount" style="width: 48px;">
+    <button (click)="spawnFoxes()">Spawn</button>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <img src="assets/animals/hare.png" alt="Zając" style="width: 24px; height: 24px;">
+    <span style="min-width: 40px;">Zające:</span>
+    <input type="number" min="0" [(ngModel)]="hareCount" style="width: 48px;">
+    <button (click)="spawnHares()">Spawn</button>
   </div>
 </div>
 <div style="display: flex; flex-direction: row; align-items: flex-start;">
