@@ -1,14 +1,37 @@
-<label>
-  <input type="radio" name="colorMode" value="height" [(ngModel)]="colorMode" (change)="redraw()"> Wysokość
-</label>
-<label>
-  <input type="radio" name="colorMode" value="biome" [(ngModel)]="colorMode" (change)="redraw()"> Biomy
-</label>
-<button (click)="generateRandomMap()">Wylosuj nową mapę</button>
-
-<div style="display: flex; flex-direction: row; align-items: flex-start;">
-    <!-- Suwak płynnego powiększenia -->
-  <div style="display: flex; align-items: center; margin-bottom: 8px;">
+<div style="margin-bottom: 8px;">
+  <label>
+    <input type="radio" name="colorMode" value="height" [(ngModel)]="colorMode" (change)="redraw()"> Wysokość
+  </label>
+  <label>
+    <input type="radio" name="colorMode" value="biome" [(ngModel)]="colorMode" (change)="redraw()"> Biomy
+  </label>
+  <button (click)="generateRandomMap()">Wylosuj nową mapę</button>
+  <app-map-generation-modal
+    [show]="showMapModal"
+    [options]="mapGenOptions"
+    (close)="showMapModal = false"
+    (generate)="onModalGenerate($event)"
+    (openSettings)="onModalSettings()"
+  ></app-map-generation-modal>
+  <app-map-generation-settings
+    *ngIf="showSettings"
+    [options]="mapGenOptions"
+    (save)="onSettingsSave($event)"
+    (cancel)="onSettingsCancel()"
+  ></app-map-generation-settings>
+</div>
+<!-- Informacja o rozmiarze mapy i kafelka -->
+<div style="margin-bottom: 8px; color: #b0b0b0; font-size: 14px;">
+  <ng-container *ngIf="map && map.length > 0 && map[0]">
+    Rozmiar mapy: {{ mapService.getMapWidthMeters(map[0].length) | number:'1.0-0' }} m × {{ mapService.getMapHeightMeters(map.length) | number:'1.0-0' }} m
+    (czyli {{ mapService.getMapWidthKm(map[0].length) | number:'1.2-2' }} km × {{ mapService.getMapHeightKm(map.length) | number:'1.2-2' }} km)
+    &nbsp;|&nbsp;
+    1 kafelek = {{ mapService.tileSizeMeters }} m × {{ mapService.tileSizeMeters }} m
+  </ng-container>
+</div>
+<!-- Suwak płynnego powiększenia -->
+<div style="display: flex; align-items: center; margin-bottom: 8px; gap: 16px;">
+  <div style="display: flex; align-items: center;">
     <label for="zoomSlider" style="margin-right: 8px;">Powiększenie:</label>
     <input
       id="zoomSlider"
@@ -22,6 +45,14 @@
     />
     <span>{{ zoom }}</span>
   </div>
+  <div style="display: flex; align-items: center; margin-left: 164px;">
+    <label for="contourInterval" style="margin-right: 8px;">Izohipsy co</label>
+    <input id="contourInterval" type="number" min="50" [(ngModel)]="contourIntervalCm" (change)="enforceMinContourInterval(); redraw()" (blur)="enforceMinContourInterval(); redraw()" style="width: 60px; margin-right: 4px;" />
+    <span>cm</span>
+    <button (click)="toggleContours()" style="margin-left: 16px;">{{ showContours ? 'Ukryj izohipsy' : 'Pokaż izohipsy' }}</button>
+  </div>
+</div>
+<div style="display: flex; flex-direction: row; align-items: flex-start;">
   <div style="position: relative; display: inline-block;">
     <canvas #mapCanvas width="800" height="800" style="border: 1px solid black; background: #181818;"></canvas>
     <!-- Strzałka w górę -->

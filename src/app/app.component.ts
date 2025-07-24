@@ -1,27 +1,75 @@
 import { Component, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
-import { MapService } from './services/map.service';
+import { MapService, MapGenerationOptions, TerrainPreset } from './services/map.service';
 import { Tile, Biome } from './models/tile.model';
 import { FormsModule } from '@angular/forms';
+import { DecimalPipe, CommonModule } from '@angular/common';
+import { MapGenerationModalComponent } from './modals/map-generation/map-generation-modal.component';
+import { MapGenerationSettingsComponent } from './modals/map-generation/map-generation-settings.component';
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
-  imports: [FormsModule],
+  imports: [FormsModule, DecimalPipe, CommonModule, MapGenerationModalComponent, MapGenerationSettingsComponent],
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent implements AfterViewInit {
+  // Rysuje tło mapy (biomy lub wysokości)
+  private drawMapBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+    const mapWidth = this.map[0].length;
+    const mapHeight = this.map.length;
+    const { minX, minY, maxX, maxY } = this.getZoomWindow();
+    // Wyznacz min/max wysokości w oknie (dla skalowania)
+    let minH = Infinity, maxH = -Infinity;
+    for (let y = Math.floor(minY); y < Math.ceil(maxY); y++) {
+      for (let x = Math.floor(minX); x < Math.ceil(maxX); x++) {
+        const h = this.map[y][x].height;
+        if (h < minH) minH = h;
+        if (h > maxH) maxH = h;
+      }
+    }
+    if (!isFinite(minH) || !isFinite(maxH) || minH === maxH) { minH = 0; maxH = 1; }
+    const imageData = ctx.createImageData(width, height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const mapX = Math.min(this.map[0].length - 1, Math.max(0, Math.round(minX + (x / width) * (maxX - minX))));
+        const mapY = Math.min(this.map.length - 1, Math.max(0, Math.round(minY + (y / height) * (maxY - minY))));
+        const tile = this.map[mapY][mapX];
+        let color;
+        if (this.colorMode === 'height') {
+          const hNorm = (tile.height - minH) / (maxH - minH);
+          const r = 255;
+          const g = Math.round(240 - (240 - 34) * hNorm);
+          const b = Math.round(250 - (250 - 34) * hNorm);
+          color = { r, g, b };
+        } else {
+          color = this.hexToRgb(this.getBiomeColor(tile.biome));
+        }
+        const idx = (y * width + x) * 4;
+        imageData.data[idx] = color.r;
+        imageData.data[idx + 1] = color.g;
+        imageData.data[idx + 2] = color.b;
+        imageData.data[idx + 3] = 255;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+  public showContours = true;
+  showMapModal = false;
+  showSettings = false;
+  mapGenOptions: MapGenerationOptions = { preset: 'niziny', width: 1000, height: 1000 };
   @ViewChild('mapCanvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('miniMapCanvas') miniMapRef!: ElementRef<HTMLCanvasElement>;
-  private map: Tile[][] = [];
-  colorMode: 'height' | 'biome' = 'height';
+  public map: Tile[][] = [];
+  public colorMode: 'height' | 'biome' = 'height';
   // Płynny zoom i przesuwanie
-  centerX = 500; // środek mapy
-  centerY = 500;
-  zoom = 1; // 1 = cała mapa, 2 = 2x, 4 = 4x itd.
-  minZoom = 1;
-  maxZoom = 32;
+  public centerX = 500; // środek mapy
+  public centerY = 500;
+  public zoom = 1; // 1 = cała mapa, 2 = 2x, 4 = 4x itd.
+  public minZoom = 1;
+  public maxZoom = 32;
+  public contourIntervalCm: number = 100; // co ile centymetrów rysować izohipsy (UI)
 
-  constructor(private mapService: MapService) {}
+  constructor(public mapService: MapService) {}
 
   ngAfterViewInit(): void {
     const canvas = this.canvasRef.nativeElement;
@@ -33,7 +81,7 @@ export class AppComponent implements AfterViewInit {
     this.map = this.mapService.generateMap(mapSize, mapSize);
     this.redraw();
     // Obsługa scrolla
-    canvas.addEventListener('wheel', (event) => this.onCanvasWheel(event));
+    canvas.addEventListener('wheel', (event) => this.onCanvasWheel(event), { passive: false });
     // Obsługa przesuwania myszą
     let isDragging = false;
     let lastX = 0, lastY = 0;
@@ -127,39 +175,20 @@ export class AppComponent implements AfterViewInit {
 
   // Rysowanie izohips
   private drawContours(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    // Najpierw tło (gradient wysokości lub biomy)
-    const imageData = ctx.createImageData(width, height);
+    // --- tylko izohipsy ---
     const mapWidth = this.map[0].length;
     const mapHeight = this.map.length;
     const { minX, minY, maxX, maxY } = this.getZoomWindow();
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const mapX = Math.round(minX + (x / width) * (maxX - minX));
-        const mapY = Math.round(minY + (y / height) * (maxY - minY));
-        const tile = this.map[mapY][mapX];
-        let color;
-        if (this.colorMode === 'height') {
-          // Czerwono-różowy gradient
-          const h = tile.height;
-          const r = 255;
-          const g = Math.round(240 - (240 - 34) * h); // 240 -> 34
-          const b = Math.round(250 - (250 - 34) * h); // 250 -> 34
-          color = { r, g, b };
-        } else {
-          // Kolor biomu
-          color = this.hexToRgb(this.mapService.getBiomeColor(tile.biome));
-        }
-        const idx = (y * width + x) * 4;
-        imageData.data[idx] = color.r;
-        imageData.data[idx + 1] = color.g;
-        imageData.data[idx + 2] = color.b;
-        imageData.data[idx + 3] = 255;
+    // Wyznacz min/max wysokości w oknie (dla skalowania)
+    let minH = Infinity, maxH = -Infinity;
+    for (let y = Math.floor(minY); y < Math.ceil(maxY); y++) {
+      for (let x = Math.floor(minX); x < Math.ceil(maxX); x++) {
+        const h = this.map[y][x].height;
+        if (h < minH) minH = h;
+        if (h > maxH) maxH = h;
       }
     }
-    ctx.putImageData(imageData, 0, 0);
-
-    // Teraz rysuj izohipsy jako linie o stałej szerokości
-    const contourStep = 0.05; // co 50 metrów
+    if (!isFinite(minH) || !isFinite(maxH) || minH === maxH) { minH = 0; maxH = 1; }
     ctx.save();
     ctx.lineWidth = 1.2;
     ctx.strokeStyle = '#000';
@@ -167,57 +196,47 @@ export class AppComponent implements AfterViewInit {
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
 
-    // Kolorowanie izohips: od jasnego czerwonego do bordowego
-    const minIso = 0.05; // minimalna izohipsa (pomijamy 0)
-    const maxIso = 0.95; // maksymalna izohipsa (poniżej 1)
-    for (let iso = minIso; iso <= maxIso; iso += contourStep) {
-      // Interpoluj kolor: #ffcccc (jasny) -> #800020 (bordowy)
-      const t = (iso - minIso) / (maxIso - minIso);
-      // R: 255 -> 128, G: 204 -> 0, B: 204 -> 32
+    // Rysuj izohipsy co contourIntervalCm centymetrów (przelicz na metry)
+    const intervalM = Math.max(0.01, this.contourIntervalCm / 100); // minimum 1cm
+    const startIso = Math.ceil(minH / intervalM) * intervalM;
+    for (let iso = startIso; iso < maxH; iso += intervalM) {
+      const t = (iso - minH) / (maxH - minH);
       const r = Math.round(255 * (1 - t) + 128 * t);
       const g = Math.round(204 * (1 - t) + 0 * t);
       const b = Math.round(204 * (1 - t) + 32 * t);
       ctx.strokeStyle = `rgb(${r},${g},${b})`;
       for (let mapY = Math.max(0, Math.floor(minY)); mapY < Math.min(mapHeight - 1, Math.ceil(maxY)); mapY++) {
         for (let mapX = Math.max(0, Math.floor(minX)); mapX < Math.min(mapWidth - 1, Math.ceil(maxX)); mapX++) {
-          // marching squares: sprawdź 4 rogi kafelka
           const h00 = this.map[mapY][mapX].height;
           const h10 = this.map[mapY][mapX+1].height;
           const h01 = this.map[mapY+1][mapX].height;
           const h11 = this.map[mapY+1][mapX+1].height;
-          // znajdź krawędzie przecięte przez izohipsę
           const edges = [];
-          // lewa krawędź
           if ((h00 < iso && h01 > iso) || (h00 > iso && h01 < iso)) {
             const tL = (iso - h00) / (h01 - h00);
             const x = mapX;
             const y = mapY + tL;
             edges.push({cx: x, cy: y});
           }
-          // prawa krawędź
           if ((h10 < iso && h11 > iso) || (h10 > iso && h11 < iso)) {
             const tR = (iso - h10) / (h11 - h10);
             const x = mapX + 1;
             const y = mapY + tR;
             edges.push({cx: x, cy: y});
           }
-          // góra
           if ((h00 < iso && h10 > iso) || (h00 > iso && h10 < iso)) {
             const tT = (iso - h00) / (h10 - h00);
             const x = mapX + tT;
             const y = mapY;
             edges.push({cx: x, cy: y});
           }
-          // dół
           if ((h01 < iso && h11 > iso) || (h01 > iso && h11 < iso)) {
             const tB = (iso - h01) / (h11 - h01);
             const x = mapX + tB;
             const y = mapY + 1;
             edges.push({cx: x, cy: y});
           }
-          // jeśli są dwa przecięcia, rysuj odcinek
           if (edges.length === 2) {
-            // przelicz na canvas
             const x1 = ((edges[0].cx - minX) / (maxX - minX)) * width;
             const y1 = ((edges[0].cy - minY) / (maxY - minY)) * height;
             const x2 = ((edges[1].cx - minX) / (maxX - minX)) * width;
@@ -226,49 +245,6 @@ export class AppComponent implements AfterViewInit {
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
             ctx.stroke();
-          }
-        }
-      }
-    }
-    // Przechodzimy po każdym "kafelku" mapy w oknie zoomu
-    if (width > 0 && height > 0) {
-      for (let mapY = Math.max(1, Math.floor(minY)); mapY < Math.min(mapHeight - 1, Math.ceil(maxY)); mapY++) {
-        for (let mapX = Math.max(1, Math.floor(minX)); mapX < Math.min(mapWidth - 1, Math.ceil(maxX)); mapX++) {
-          const h = this.map[mapY][mapX].height;
-          // Sprawdź sąsiadów (prawo i dół) – rysuj izohipsę jeśli przechodzi przez krawędź
-          for (const [dx, dy] of [[1,0],[0,1]]) {
-            const nx = mapX + dx;
-            const ny = mapY + dy;
-            if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
-              const nh = this.map[ny][nx].height;
-              if (nh === h) continue; // uniknij dzielenia przez zero
-              const minH = Math.min(h, nh);
-              const maxH = Math.max(h, nh);
-              let lower = Math.ceil(minH / contourStep) * contourStep;
-              if (Math.abs(lower - minH) < 1e-8) lower += contourStep;
-              for (let iso = lower; iso < maxH; iso += contourStep) {
-                if (iso > minH && iso < maxH) {
-                  const t = (iso - h) / (nh - h);
-                  if (isNaN(t) || t < 0 || t > 1) continue;
-                  // mapX, mapY -> canvasX, canvasY
-                  const x1 = ((mapX - minX) / (maxX - minX)) * width;
-                  const y1 = ((mapY - minY) / (maxY - minY)) * height;
-                  const x2 = ((nx - minX) / (maxX - minX)) * width;
-                  const y2 = ((ny - minY) / (maxY - minY)) * height;
-                  const cx = x1 + (x2 - x1) * t;
-                  const cy = y1 + (y2 - y1) * t;
-                  ctx.beginPath();
-                  if (dx === 1) {
-                    ctx.moveTo(cx, y1);
-                    ctx.lineTo(cx, y2);
-                  } else {
-                    ctx.moveTo(x1, cy);
-                    ctx.lineTo(x2, cy);
-                  }
-                  ctx.stroke();
-                }
-              }
-            }
           }
         }
       }
@@ -282,9 +258,17 @@ export class AppComponent implements AfterViewInit {
     if (!ctx) return;
     const width = canvas.width;
     const height = canvas.height;
-    this.drawContours(ctx, width, height);
+    this.drawMapBackground(ctx, width, height);
+    if (this.showContours) {
+      this.drawContours(ctx, width, height);
+    }
     this.drawPeaksAndValleys(ctx, width, height);
     this.drawMiniMap();
+  }
+
+  toggleContours() {
+    this.showContours = !this.showContours;
+    this.redraw();
   }
 
   private drawMiniMap(): void {
@@ -299,21 +283,32 @@ export class AppComponent implements AfterViewInit {
     const mapH = this.map.length;
     const stepX = mapW / w;
     const stepY = mapH / h;
+    // Wyznacz min/max wysokości na całej mapie (dla normalizacji)
+    let minH = Infinity, maxH = -Infinity;
+    for (let y = 0; y < mapH; y++) {
+      for (let x = 0; x < mapW; x++) {
+        const h = this.map[y][x].height;
+        if (h < minH) minH = h;
+        if (h > maxH) maxH = h;
+      }
+    }
+    if (!isFinite(minH) || !isFinite(maxH) || minH === maxH) { minH = 0; maxH = 1; }
     const imageData = ctx.createImageData(w, h);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const mapX = Math.floor(x * stepX);
-        const mapY = Math.floor(y * stepY);
+        const mapX = Math.min(this.map[0].length - 1, Math.max(0, Math.floor(x * stepX)));
+        const mapY = Math.min(this.map.length - 1, Math.max(0, Math.floor(y * stepY)));
         const tile = this.map[mapY][mapX];
         let color;
         if (this.colorMode === 'height') {
-          const hh = tile.height;
+          // Normalizuj wysokość do 0-1 względem min/max na mapie
+          const hNorm = (tile.height - minH) / (maxH - minH);
           const r = 255;
-          const g = Math.round(240 - (240 - 34) * hh);
-          const b = Math.round(250 - (250 - 34) * hh);
+          const g = Math.round(240 - (240 - 34) * hNorm);
+          const b = Math.round(250 - (250 - 34) * hNorm);
           color = { r, g, b };
         } else {
-          color = this.hexToRgb(this.mapService.getBiomeColor(tile.biome));
+          color = this.hexToRgb(this.getBiomeColor(tile.biome));
         }
         const idx = (y * w + x) * 4;
         imageData.data[idx] = color.r;
@@ -340,6 +335,8 @@ export class AppComponent implements AfterViewInit {
     ctx.strokeRect(x, y, ww, hh2);
     ctx.restore();
   }
+
+  // Mapowanie kolorów biomów (przeniesione z serwisu)
 
 // ...istniejący kod klasy AppComponent...
 
@@ -388,7 +385,7 @@ private drawPeaksAndValleys(ctx: CanvasRenderingContext2D, width: number, height
     ctx.moveTo(peak.x - peakRadius, peak.y + peakRadius);
     ctx.lineTo(peak.x + peakRadius, peak.y - peakRadius);
     ctx.stroke();
-    ctx.fillText(Math.round(peak.h * 1000) + ' m', peak.x, peak.y + peakRadius + 2);
+    ctx.fillText(Math.round(peak.h) + ' m', peak.x, peak.y + peakRadius + 2);
   }
 
   // Doliny
@@ -418,7 +415,7 @@ private drawPeaksAndValleys(ctx: CanvasRenderingContext2D, width: number, height
     ctx.lineTo(valley.x, valley.y + valleyRadius);
     ctx.lineTo(valley.x + valleyRadius, valley.y - valleyRadius);
     ctx.stroke();
-    ctx.fillText(Math.round(valley.h * 1000) + ' m', valley.x, valley.y + valleyRadius + 2);
+    ctx.fillText(Math.round(valley.h) + ' m', valley.x, valley.y + valleyRadius + 2);
   }
 
   ctx.restore();
@@ -440,18 +437,41 @@ private drawPeaksAndValleys(ctx: CanvasRenderingContext2D, width: number, height
     };
   }
 
+  // Mapowanie kolorów biomów (przeniesione z serwisu)
+
+  // Mapowanie kolorów biomów (przeniesione z serwisu)
+
   generateRandomMap(): void {
+    this.showMapModal = true;
+  }
+
+  onModalGenerate(options: MapGenerationOptions) {
     const canvas = this.canvasRef.nativeElement;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const width = canvas.width;
-    const height = canvas.height;
-    const mapSize = 1000;
-    this.map = this.mapService.generateMap(mapSize, mapSize);
-    this.centerX = 500;
-    this.centerY = 500;
+    this.mapGenOptions = { ...this.mapGenOptions, ...options };
+    this.map = this.mapService.generateMap(this.mapGenOptions);
+    this.centerX = (this.mapGenOptions.width ?? 1000) / 2;
+    this.centerY = (this.mapGenOptions.height ?? 1000) / 2;
     this.zoom = 1;
+    this.showMapModal = false;
     this.redraw();
+  }
+
+  onModalSettings() {
+    this.showMapModal = false;
+    this.showSettings = true;
+  }
+
+  onSettingsSave(options: MapGenerationOptions) {
+    this.mapGenOptions = { ...this.mapGenOptions, ...options };
+    this.showSettings = false;
+    this.showMapModal = true;
+  }
+
+  onSettingsCancel() {
+    this.showSettings = false;
+    this.showMapModal = true;
   }
 
   downloadMap(): void {
@@ -492,5 +512,28 @@ private drawPeaksAndValleys(ctx: CanvasRenderingContext2D, width: number, height
     this.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, newZoom));
     this.clampCenter();
     this.redraw();
+  }
+  enforceMinContourInterval() {
+    if (this.contourIntervalCm < 50) {
+      this.contourIntervalCm = 50;
+    }
+  }
+  // Mapowanie kolorów biomów (przeniesione z serwisu)
+  // Mapowanie kolorów biomów (przeniesione z serwisu)
+  private getBiomeColor(biome: Biome): string {
+    switch (biome) {
+      case 'grass': return '#a8d08d'; // meadow
+      case 'forest': return '#558b2f'; // zwykły las
+      case 'dense-forest': return '#20551b'; // gęsty las na brzegu (ciemnozielony)
+      case 'field': return '#e4c976';
+      case 'lake': return '#4fc3f7'; // water/ditch
+      case 'reed': return '#8a9a5b'; // bush (oliwkowy)
+      case 'river': return '#bfa76f'; // road (ścieżka)
+      case 'building': return '#bca98c'; // budynki (opcjonalnie)
+      case 'village': return '#e07b39'; // wioska (pomarańczowy, wyraźny)
+      case 'river-source': return '#6ec6ff';
+      case 'river-mouth': return '#01579b';
+      default: return '#cccccc';
+    }
   }
 }

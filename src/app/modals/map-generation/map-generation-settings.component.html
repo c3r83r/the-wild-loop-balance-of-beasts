@@ -1,0 +1,25 @@
+<div class="modal-backdrop">
+  <div class="modal">
+    <h2>Ustawienia generowania mapy</h2>
+    <form>
+      <div>
+        <label>Typ terenu:</label>
+        <select [(ngModel)]="options.preset" name="preset">
+          <option *ngFor="let preset of presets" [value]="preset.value">{{ preset.label }}</option>
+        </select>
+      </div>
+      <div>
+        <label>Minimalna wysokość (m):</label>
+        <input type="number" [(ngModel)]="options.minHeight" name="minHeight">
+      </div>
+      <div>
+        <label>Maksymalna wysokość (m):</label>
+        <input type="number" [(ngModel)]="options.maxHeight" name="maxHeight">
+      </div>
+      <div class="modal-actions">
+        <button type="button" (click)="onSave()">Zapisz</button>
+        <button type="button" (click)="cancel.emit()">Anuluj</button>
+      </div>
+    </form>
+  </div>
+</div>

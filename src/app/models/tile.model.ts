@@ -1,13 +1,17 @@
 export type Biome =
   | 'grass'
   | 'forest'
+  | 'dense-forest'
   | 'field'
   | 'river'
   | 'lake'
   | 'beach'
   | 'reed'
   | 'river-source'
-  | 'river-mouth';
+  | 'river-mouth'
+  | 'building'
+  | 'village'
+;
 
 export interface Tile {
   biome: Biome;
