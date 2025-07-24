@@ -1,0 +1,22 @@
+
+
+:host {
+  display: block;
+  min-height: 100vh;
+  background: #181818;
+  color: #e0e0e0;
+  padding: 2rem;
+}
+
+button, input[type="file"] {
+  background: #232323;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  padding: 0.5em 1em;
+  margin: 0.5em 0.5em 0.5em 0;
+  border-radius: 4px;
+}
+
+button:hover, input[type="file"]:hover {
+  background: #333;
+}
